@@ -1,0 +1,51 @@
+{
+  "_aide": "Copie ce fichier en config.json, puis remplace les ID de salons. Mode d'emploi complet dans README.md.",
+  "discord": {
+    "channels": [
+      {
+        "id": "123456789012345678",
+        "name": "annonces",
+        "context": "Annonces officielles du serveur : mises à jour, événements, changements de planning."
+      },
+      {
+        "id": "234567890123456789",
+        "name": "general",
+        "context": "Discussion générale : je ne veux être alerté que si on me mentionne ou si on me demande quelque chose."
+      }
+    ]
+  },
+  "ai": {
+    "provider": "vyceai",
+    "model": "deepseek-v4-flash",
+    "api_key_env": "VYCEAI_API_KEY",
+    "json_mode": true,
+    "temperature": 0.0,
+    "timeout_seconds": 30,
+    "retries": 2,
+    "retry_backoff_seconds": 1.0
+  },
+  "analysis": {
+    "instructions": "Je gère un serveur de jeu vidéo. Sont importants : les annonces, les changements de date, les questions qui attendent une réponse de ma part, les signalements de problème. Ne sont pas importants : les blagues, les memes, les remerciements, le bavardage.",
+    "ignore_bots": true,
+    "context_messages": 3,
+    "max_message_chars": 2000,
+    "min_confidence": 0.5,
+    "ignore_user_ids": []
+  },
+  "notify": {
+    "dm_user_id": null,
+    "log_channel_id": null,
+    "webhook_url_env": "DISCORD_WEBHOOK_URL",
+    "sound": true,
+    "sound_file": "jarvis.wav",
+    "telegram": {
+      "enabled": false,
+      "chat_id": "",
+      "token_env": "TELEGRAM_BOT_TOKEN"
+    }
+  },
+  "runtime": {
+    "token_env": "DISCORD_USER_TOKEN",
+    "state_file": "state.json"
+  }
+}

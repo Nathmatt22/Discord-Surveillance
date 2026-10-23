@@ -1,0 +1,12 @@
+.env
+.venv/
+state.json
+*.log
+__pycache__/
+*.pyc
+
+# Configuration personnelle (ID de salons, consignes) : reste en local.
+config.json
+
+# Marqueur interne de l'éditeur.
+.freebuff/
