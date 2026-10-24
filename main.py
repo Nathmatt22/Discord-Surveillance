@@ -22,7 +22,12 @@ import discord
 from selfai.bot import SelfAIBot
 from selfai.classifier import Classifier, ClassifierError
 from selfai.config import Config, ConfigError, load_config
-from selfai.dashboard import Dashboard, DashboardLogHandler
+from selfai.dashboard import (
+    Dashboard,
+    DashboardLogHandler,
+    set_ascii_only,
+    supports_unicode,
+)
 from selfai.settings import LiveSettings
 from selfai.state import StateStore
 
@@ -257,7 +262,14 @@ def _configure_logging(
 
 
 def _configure_output() -> None:
-    """Évite un crash d'encodage sur la console Windows (emoji, accents)."""
+    """Prépare la sortie : UTF-8 si le terminal le comprend, ASCII sinon.
+
+    Forcer l'UTF-8 sur un terminal qui ne le décode pas (console texte du
+    Raspberry Pi, client SSH en Latin-1, locale C…) ne provoque pas d'erreur
+    mais un affichage en « â•”€ », avec des lignes trop larges qui se replient :
+    toute l'interface part en morceaux. On lit donc l'encodage du terminal
+    **avant** de le changer, et à défaut on n'écrit que de l'ASCII.
+    """
     if sys.platform == "win32" and sys.stdout.isatty():
         # La sortie est reconvertie en UTF-8 plus bas : la console doit lire en
         # UTF-8 aussi, sinon les accents et les cadres s'affichent en mojibake.
@@ -268,13 +280,21 @@ def _configure_output() -> None:
             ctypes.windll.kernel32.SetConsoleCP(65001)
         except Exception:
             pass
+    ascii_mode = not supports_unicode(sys.stdout)
+    set_ascii_only(ascii_mode)
     for stream in (sys.stdout, sys.stderr):
         reconfigure = getattr(stream, "reconfigure", None)
-        if reconfigure is not None:
-            try:
+        if reconfigure is None:
+            continue
+        try:
+            if ascii_mode:
+                # L'interface n'écrit plus que de l'ASCII : on garde l'encodage
+                # du terminal pour le reste (résumé, erreurs, accents).
+                reconfigure(errors="replace")
+            else:
                 reconfigure(encoding="utf-8", errors="replace")
-            except (ValueError, OSError):
-                pass
+        except (ValueError, OSError):
+            pass
 
 
 if __name__ == "__main__":

@@ -18,6 +18,9 @@ from selfai.dashboard import (
     Snapshot,
     fit_text,
     render,
+    set_ascii_only,
+    supports_unicode,
+    terminal_size,
     text_width,
     wrap_text,
 )
@@ -632,6 +635,95 @@ class InteractiveLoopTests(unittest.TestCase):
         self.assertIn("\x1b[?1049l", output)
         self.assertIn("messages importants", ANSI.sub("", output))
         self.assertTrue(backend.closed)
+
+
+class AsciiFallbackTests(unittest.TestCase):
+    """Terminal non UTF-8 : l'interface doit rester lisible et alignée."""
+
+    def tearDown(self) -> None:
+        set_ascii_only(False)
+
+    def test_meme_mise_en_page_en_ascii(self) -> None:
+        snap = snapshot()
+        reference = [plain(line) for line in render(snap, 100, 30, 0.0).to_lines()]
+        set_ascii_only(True)
+        converted = [plain(line) for line in render(snap, 100, 30, 0.0).to_lines()]
+        self.assertEqual(len(reference), len(converted))
+        for before, after in zip(reference, converted):
+            self.assertTrue(after.isascii(), after)
+            # Un caractère décoratif = un caractère ASCII : rien ne déborde.
+            self.assertEqual(text_width(before), text_width(after))
+
+    def test_aucune_ligne_plus_large_que_le_terminal(self) -> None:
+        set_ascii_only(True)
+        for view in ("home", "messages", "settings", "help", "detail"):
+            snap = snapshot()
+            snap.view = view
+            for line in render(snap, 90, 28, 0.0).to_lines():
+                self.assertLessEqual(text_width(plain(line)), 90)
+
+    def test_accents_et_cadres_remplaces(self) -> None:
+        set_ascii_only(True)
+        snap = snapshot()
+        snap.view = "settings"
+        reglages = "\n".join(
+            plain(line) for line in render(snap, 96, 30, 0.0).to_lines()
+        )
+        self.assertIn("SECURITE", reglages)
+        self.assertIn("REGLAGES", reglages)
+        self.assertIn("parametres", reglages)
+        accueil = "\n".join(
+            plain(line) for line in render(snapshot(), 96, 30, 0.0).to_lines()
+        )
+        self.assertIn("+---", accueil)  # cadre du panneau d'alertes
+        for texte in (reglages, accueil):
+            self.assertNotIn("─", texte)
+            self.assertNotIn("│", texte)
+
+    def test_detection_du_terminal(self) -> None:
+        class Stream:
+            def __init__(self, encoding: str | None, tty: bool = True) -> None:
+                self.encoding = encoding
+                self._tty = tty
+
+            def isatty(self) -> bool:
+                return self._tty
+
+            def fileno(self) -> int:
+                return 0
+
+        with mock.patch.dict("os.environ", {"TERM": "xterm-256color"}, clear=True):
+            with mock.patch("os.ttyname", return_value="/dev/pts/0"):
+                self.assertTrue(supports_unicode(Stream("utf-8")))
+            # Console texte du Pi, même si TERM a été écrasé.
+            with mock.patch("os.ttyname", return_value="/dev/tty1"):
+                self.assertFalse(supports_unicode(Stream("utf-8")))
+            self.assertFalse(supports_unicode(Stream("ANSI_X3.4-1968")))
+            self.assertTrue(supports_unicode(Stream(None, tty=False)))
+            with mock.patch.dict("os.environ", {"TERM": "linux"}):
+                self.assertFalse(supports_unicode(Stream("utf-8")))
+            for forced in ("1", "oui", "YES"):
+                with mock.patch.dict("os.environ", {"SELFAI_ASCII": forced}):
+                    self.assertFalse(supports_unicode(Stream("utf-8")))
+            for forced in ("0", "non", "NO"):
+                with mock.patch.dict("os.environ", {"SELFAI_ASCII": forced}):
+                    self.assertTrue(supports_unicode(Stream("ANSI_X3.4-1968")))
+
+    def test_taille_lue_sur_le_terminal(self) -> None:
+        class Stream:
+            def fileno(self) -> int:
+                return 1
+
+        taille = mock.Mock(columns=123, lines=45)
+        with mock.patch("os.get_terminal_size", return_value=taille):
+            self.assertEqual(terminal_size(Stream()), (123, 45))
+
+        class SansFil:
+            def fileno(self) -> int:
+                raise OSError("pas de terminal")
+
+        with mock.patch.dict("os.environ", {"COLUMNS": "120", "LINES": "40"}):
+            self.assertEqual(terminal_size(SansFil()), (120, 40))
 
 
 class SettingsTests(unittest.TestCase):

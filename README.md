@@ -241,7 +241,14 @@ Le jeton Discord ne peut pas changer à chaud : il prend effet au prochain lance
 
 **Où l'interface fonctionne** : Windows Terminal, cmd, PowerShell. Dans Git Bash,
 les clics ne passent pas : elle reste utilisable mais avec des commandes tapées puis
-`Entrée`. Sur macOS / Linux, ça marche directement.
+`Entrée`. Sur macOS / Linux, ça marche directement — y compris sur un Raspberry Pi.
+
+**Terminal sans UTF-8** : sur la console texte d'un Raspberry Pi, en SSH depuis un
+client réglé en Latin-1, ou avec une locale `C`, les cadres Unicode sortent en
+`â•”€` et les lignes, trop larges, se replient en laissant des restes de l'écran
+précédent. L'interface le détecte et se limite alors à de l'ASCII (`+---+`, `|`,
+accentuation retirée), sans rien changer à la disposition. Pour forcer un choix :
+`SELFAI_ASCII=1` (toujours en ASCII) ou `SELFAI_ASCII=0` (toujours en Unicode).
 
 Laisse l'interface ouverte : c'est elle qui analyse et qui t'alerte. `Ctrl+C` arrête.
 
@@ -254,6 +261,7 @@ Laisse l'interface ouverte : c'est elle qui analyse et qui t'alerte. `Ctrl+C` ar
 | Aucune alerte alors que ça discute | Lance `--test`, baisse `min_confidence`, vérifie que l'identifiant est bien un salon où ton compte peut lire. |
 | Les salons sont « introuvables » | Identifiant erroné, ou ton compte n'a pas accès à ce salon. |
 | Rien avant le lancement | Normal : le script ne relit pas l'historique. |
+| Cadres en `â•”€`, restes d'écran | Le terminal n'est pas en UTF-8 : passe-le en UTF-8, ou force `SELFAI_ASCII=1` (voir plus haut). |
 | Pas de son | Son de Windows coupé, `sound` à `false`, ou `.wav` invalide. |
 | Le compte passe en ligne | Comportement normal d'une connexion. Un compte secondaire règle ça. |
 | Rien n'arrive sur Telegram | Écris d'abord un message au bot (il ne peut pas écrire en premier), et vérifie le `chat_id`. |

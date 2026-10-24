@@ -74,6 +74,106 @@ for _index, _color in enumerate(
 
 
 # --------------------------------------------------------------------------
+# Jeu de caractères de sortie
+# --------------------------------------------------------------------------
+#
+# Un terminal qui n'est pas en UTF-8 (console texte d'un Raspberry Pi, client
+# SSH réglé en Latin-1, locale C…) affiche les octets UTF-8 un par un : « ─ »
+# devient « â•”€ », chaque ligne déborde de la largeur de l'écran, se replie sur
+# la suivante et laisse les restes de l'ancienne vue un peu partout. Dans ce cas
+# on remplace chaque caractère décoratif par un équivalent ASCII **de même
+# largeur**, donc la mise en page ne bouge pas.
+
+ASCII_ENV = "SELFAI_ASCII"
+
+ASCII_FALLBACK = {
+    "─": "-",
+    "═": "=",
+    "│": "|",
+    "║": "|",
+    "╭": "+",
+    "╮": "+",
+    "╰": "+",
+    "╯": "+",
+    "▏": "|",
+    "·": ".",
+    "…": ".",
+    "•": "*",
+    "●": "o",
+    "›": ">",
+    "‹": "<",
+    "«": "<",
+    "»": ">",
+    "→": ">",
+    "▲": "^",
+    "▼": "v",
+    "⚠": "!",
+    "—": "-",
+    "−": "-",
+}
+
+_ASCII_ONLY = False
+
+
+def set_ascii_only(enabled: bool) -> None:
+    """Force l'interface en ASCII pur (terminaux non UTF-8)."""
+    global _ASCII_ONLY
+    _ASCII_ONLY = bool(enabled)
+
+
+def ascii_only() -> bool:
+    return _ASCII_ONLY
+
+
+def _ascii_char(char: str) -> str:
+    """Équivalent ASCII d'un caractère, toujours large d'une colonne."""
+    if char.isascii():
+        return char
+    replacement = ASCII_FALLBACK.get(char)
+    if replacement is not None:
+        return replacement
+    # « é » -> « e », « ô » -> « o » : les accents sautent. Un seul caractère
+    # est renvoyé, sinon les colonnes voisines se décaleraient.
+    for letter in unicodedata.normalize("NFKD", char):
+        if letter.isascii() and letter.isprintable():
+            return letter
+    return "?"
+
+
+def supports_unicode(stream: object) -> bool:
+    """Le terminal peut-il afficher les cadres et les accents (UTF-8) ?
+
+    ``SELFAI_ASCII=1`` force le repli ASCII, ``SELFAI_ASCII=0`` le désactive.
+    """
+    override = os.environ.get(ASCII_ENV, "").strip().lower()
+    if override in ("1", "oui", "yes", "true", "on"):
+        return False
+    if override in ("0", "non", "no", "false", "off"):
+        return True
+    try:
+        if not stream.isatty():  # fichier redirigé : l'UTF-8 est sans risque
+            return True
+    except (AttributeError, ValueError):
+        return True
+    if sys.platform == "win32":
+        # La page de code 65001 a été posée au démarrage.
+        return True
+    encoding = (getattr(stream, "encoding", "") or "").lower()
+    if "utf" not in encoding:
+        return False
+    # Console texte Linux (Raspberry Pi branché en HDMI) : selon la police et la
+    # locale chargées, les octets UTF-8 y sortent en « â•”€ ». Elle porte
+    # ``TERM=linux`` et s'appelle /dev/tty1 (un pseudo-terminal est /dev/pts/…).
+    if os.environ.get("TERM", "").strip() == "linux":
+        return False
+    try:
+        name = os.ttyname(stream.fileno())
+    except (AttributeError, OSError, ValueError):
+        return True
+    return not (name.startswith("/dev/tty") and name[len("/dev/tty"):].isdigit())
+
+
+# --------------------------------------------------------------------------
 # Largeur d'affichage (les emoji comptent double)
 # --------------------------------------------------------------------------
 
@@ -286,11 +386,17 @@ class Screen:
             current = None
             for char, style in row[: last + 1]:
                 if char == "":
-                    continue
+                    continue  # moitié droite d'un caractère double
                 if style != current:
                     chunks.append(STYLES.get(style, "") or RESET)
                     current = style
-                chunks.append(char)
+                if not _ASCII_ONLY:
+                    chunks.append(char)
+                    continue
+                chunks.append(_ascii_char(char))
+                if char_width(char) == 2:
+                    # Un emoji devient « ? » : la colonne de droite reste prise.
+                    chunks.append(" ")
             chunks.append(RESET + ERASE_LINE_END)
             lines.append("".join(chunks))
         return lines
@@ -887,6 +993,22 @@ def render(snap: Snapshot, width: int, height: int, t: float) -> Screen:
 # --------------------------------------------------------------------------
 
 
+def terminal_size(stream: object) -> tuple[int, int]:
+    """Taille réelle du terminal, en colonnes et lignes.
+
+    ``shutil.get_terminal_size`` obéit d'abord à ``COLUMNS``/``LINES`` : une
+    valeur héritée d'un autre terminal casse toute la mise en page (des lignes
+    plus larges que l'écran se replient et laissent des restes). On interroge
+    donc d'abord le terminal lui-même.
+    """
+    try:
+        size = os.get_terminal_size(stream.fileno())
+        return size.columns, size.lines
+    except (AttributeError, OSError, ValueError):
+        size = shutil.get_terminal_size((100, 30))
+        return size.columns, size.lines
+
+
 class Dashboard:
     """État partagé avec le bot, rendu et lecture des commandes."""
 
@@ -1434,9 +1556,9 @@ class Dashboard:
             started = time.monotonic()
             while self._running:
                 if self._should_draw():
-                    size = shutil.get_terminal_size((100, 30))
-                    width = max(20, size.columns)
-                    height = max(12, size.lines - 1)
+                    columns, lines = terminal_size(self._stdout)
+                    width = max(20, columns)
+                    height = max(12, lines - 1)
                     screen = self.frame(width, height, time.monotonic() - started)
                     write("\x1b[H" + screen.to_ansi())
                     if self._mouse_ui:
